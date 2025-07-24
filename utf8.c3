@@ -48,8 +48,8 @@ macro UTF8Char @utf8char(String $s) @builtin @const
 fn usz UTF8String.len(&self) @operator(len) => validate_utf8_string(self.buf)!!;
 
 <*
- @require idx < self.len()
  @require @ok(validate_utf8_string(self.buf))
+ @require idx < self.len()
 *>
 fn UTF8Char UTF8String.get_char(&self, usz idx) @operator([])
 {
@@ -66,8 +66,8 @@ fn UTF8Char UTF8String.get_char(&self, usz idx) @operator([])
 }
 
 <*
- @require idx < self.len()
  @require @ok(validate_utf8_string(self.buf))
+ @require idx < self.len()
 *>
 fn char[] UTF8String.get(&self, usz idx)
 {
@@ -89,9 +89,9 @@ fn bool UTF8String.equals(&self, UTF8String other) @operator(==) @inline => self
 
 <*
 // @ensure @ok(io::printfn("returned a slice of len %s containing '%s'", return.buf.len, return.buf))
+ @require @ok(validate_utf8_string(self.buf))
  @require end_inc <= self.len()
  @require start_inc <= end_inc
- @require @ok(validate_utf8_string(self.buf))
 *>
 fn UTF8String UTF8String.slice(&self, usz start_inc, usz end_inc)
 {
@@ -113,8 +113,8 @@ fn UTF8String UTF8String.slice(&self, usz start_inc, usz end_inc)
 }
 
 <*
- @require start + len <= self.len()
  @require @ok(validate_utf8_string(self.buf))
+ @require start + len <= self.len()
 *>
 fn UTF8String UTF8String.slice_len(&self, usz start, usz len) // => self.slice(start, start + len - 1);
 {
@@ -239,11 +239,9 @@ macro UTF8Char @string_to_utf8_char(char[] #s) => (UTF8Char)(UTF8CharBuilder)
 	.four  = #s.len > 3 ? #s[3] : 0,
 };
 
-import std::io;
-usz a;
 macro usz? validate_utf8_string(char[] s)
 {
-	io::printfn("validating string for the %s time", a++);
+	// io::printfn("validating string for the %s time", a++);
 	usz len;
 	for (usz byte_len; byte_len < s.len; byte_len += utf8_char_len(s[byte_len..])!, len++);
 	return len;
