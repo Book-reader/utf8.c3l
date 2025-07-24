@@ -69,16 +69,21 @@ fn UTF8Char UTF8String.get_char(&self, usz idx) @operator([])
  @require @ok(validate_utf8_string(self.buf))
  @require idx < self.len()
 *>
-fn char[] UTF8String.get(&self, usz idx)
+fn char[] UTF8String.get_char_slice(&self, usz idx)
 {
-	usz i, utf8i, char_size;
+/*	usz i, utf8i, char_size;
 	// TODO: replace with char iterator that returns both char and byte idx
 	do
 	{
 		char_size = utf8_char_len(self.buf[i..])!!;
 		i += char_size;
 	} while (utf8i != idx && ++utf8i);
-	return self.buf[i - char_size:char_size];
+	return self.buf[i - char_size:char_size];*/
+	foreach (i, c : self.iter())
+	{
+		if (i == idx) return self.buf[c.byte_idx:c.char_size];
+	}
+	unreachable();
 }
 
 <*
@@ -90,35 +95,32 @@ fn bool UTF8String.equals(&self, UTF8String other) @operator(==) @inline => self
 <*
 // @ensure @ok(io::printfn("returned a slice of len %s containing '%s'", return.buf.len, return.buf))
  @require @ok(validate_utf8_string(self.buf))
- @require end_inc <= self.len()
+ @require end_inc < self.len()
  @require start_inc <= end_inc
 *>
 fn UTF8String UTF8String.slice(&self, usz start_inc, usz end_inc)
 {
-	usz i, utf8i, char_size, start_byte_idx, end_byte_idx;
-	// TODO: replace with char iterator that returns both char idx and byte idx
-	do
+	usz start_byte_idx, end_byte_idx;
+	foreach (i, c : self.iter())
 	{
-		char_size = utf8_char_len(self.buf[i..])!!;
-		if (utf8i == start_inc) start_byte_idx = i;
-		i += char_size;
-		if (utf8i == end_inc) end_byte_idx = i - 1;
-		
-		//i += utf8_char_len(self.buf[i..])!!;
-
-	} while (utf8i != end_inc && ++utf8i);
-	// end_byte_idx = i;
-
-	return {self.buf[start_byte_idx..end_byte_idx]};
+		if (i == start_inc) start_byte_idx = c.byte_idx;
+		if (i == end_inc)
+		{
+			end_byte_idx = c.byte_idx + c.char_size;
+			break;
+		}
+	}
+	return {self.buf[start_byte_idx..end_byte_idx - 1]};
 }
 
 <*
  @require @ok(validate_utf8_string(self.buf))
  @require start + len <= self.len()
 *>
-fn UTF8String UTF8String.slice_len(&self, usz start, usz len) // => self.slice(start, start + len - 1);
+fn UTF8String UTF8String.slice_len(&self, usz start, usz len)
 {
 	usz i, utf8i, start_byte_idx, byte_len;
+	// TODO: replace with iterator
 	while (utf8i != start)
 	{
 		i += utf8_char_len(self.buf[i..])!!;
@@ -135,25 +137,24 @@ fn UTF8String UTF8String.slice_len(&self, usz start, usz len) // => self.slice(s
 }
 
 
-// a more efficient way of iterating over a utf8 string than foreach ( : self) in linear time instead of in whatever time it usually is (too much time)
+// a more efficient way of iterating over a utf8 string than foreach (c : self) in linear time instead of in whatever time it usually is (too much time)
 <*
   @require @ok(validate_utf8_string(self.buf))
 *>
 fn UTF8Iterator UTF8String.iter(self) => {.string = self};
 
-/*<*
+<*
   @require @ok(validate_utf8_string(self.buf))
 *>
 fn UTF8CharIterator UTF8String.iter_chars(self) => {.string = self};
-*/
+
 <*
  @require @ok(validate_utf8_string(self.buf))
  @require @ok(validate_utf8_char(c))
 *>
 fn usz? UTF8String.index_of_char(&self, UTF8Char c)
 {
-	// TODO: replace with char iterator
-	foreach (i, c1 : self) if (c == c1) return i;
+	foreach (i, c1 : self.iter_chars()) if (c == c1) return i;
 	return NOT_FOUND?;
 }
 
@@ -173,22 +174,12 @@ fn usz? UTF8String.index_of(&self, UTF8String needle)
 	usz needle_len = needle.len();
 	isz self_len = self.len();
 	if (self_len < needle_len) return NOT_FOUND?;
-	// TODO: replace with char iterator
+
 	for (usz i = 0; i < self_len; i++)
 	{
 		if (i + needle_len > self_len) return NOT_FOUND?;
-		// io::printfn("test: '%s'", self.slice_len(i, needle_len));
 		if (self.slice_len(i, needle_len) == needle) return i;
 	}
-/*	foreach (i, c : self.buf)
-	{
-/*		io::printfn("i: %s, c: %s", i, c);
-		if (c == needle.buf[0])
-		{
-			if (self_len - i )
-			if (self.slice_len(i, needle_len) == needle) return i;
-		}*/
-	}*/
 	return NOT_FOUND?;
 }
 
@@ -201,25 +192,34 @@ struct UTF8Iterator
 
 struct UTF8IteratorValue
 {
-	UTF8Char val;
 	usz byte_idx;
+	UTF8Char val;
+	char char_size;
 }
 
 fn usz UTF8Iterator.len(&self) @operator(len) => self.string.len();
 
 <*
- @require idx == self.char_idx : "Must do a foreach loop over UTF8CharIterator"
+ @require idx == self.char_idx : "Must do a foreach loop over UTF8Iterator"
 *>
 fn UTF8IteratorValue UTF8Iterator.get(&self, usz idx) @operator([])
 {
-	usz char_size = utf8_char_len(self.string.buf[self.byte_idx..])!!;
+	char char_size = utf8_char_len(self.string.buf[self.byte_idx..])!!;
 	defer
 	{
 		self.char_idx ++;
 		self.byte_idx += char_size;
 	}
-	return {@string_to_utf8_char(self.string.buf[self.byte_idx:char_size]), self.byte_idx};
+	return {self.byte_idx, @string_to_utf8_char(self.string.buf[self.byte_idx:char_size]), char_size};
 }
+
+typedef UTF8CharIterator = inline UTF8Iterator;
+
+<*
+ @require idx == self.char_idx : "Must do a foreach loop over UTF8CharIterator"
+*>
+fn UTF8Char UTF8CharIterator.get(&self, usz idx) @operator([]) @inline => ((UTF8Iterator*)self).get(idx).val;
+fn usz UTF8CharIterator.len(&self) @operator(len) => self.string.len();
 
 module utf8 @private;
 
@@ -239,6 +239,7 @@ macro UTF8Char @string_to_utf8_char(char[] #s) => (UTF8Char)(UTF8CharBuilder)
 	.four  = #s.len > 3 ? #s[3] : 0,
 };
 
+import std::io;
 macro usz? validate_utf8_string(char[] s)
 {
 	// io::printfn("validating string for the %s time", a++);
@@ -251,7 +252,7 @@ const MAX_CONST_UTF8_VALIDATE = 50_000;
 macro usz @validate_const_utf8_string($s) @const
 {
 	$if $s.len > MAX_CONST_UTF8_VALIDATE:
-		$echo @sprintf("(%s:%s) Warning: not validating constant utf8 string with size %s as it is too long", $$FILE, $$LINE, $s.len);
+		$echo @sprintf("(%s:%s) Warning: not validating constant utf8 string with size %s as it is too long", $$FILEPATH, $$LINE, $s.len);
 		return 0;
 	$else
 		usz $len = 0;
@@ -265,7 +266,7 @@ macro usz @validate_const_utf8_string($s) @const
 	$endif
 }
 
-macro usz? validate_utf8_char(UTF8Char c) => utf8_char_len(c.to_constant_string());
+macro char? validate_utf8_char(UTF8Char c) => utf8_char_len(c.to_constant_string());
 
 <*
 	@require self.len > 0
