@@ -2,6 +2,7 @@ module utf8;
 import std::io;
 
 const UTF8_CHAR_SIZE = 4;
+const UTF8_VECTOR_CHECK_SIZE = 8;
 
 faultdef INVALID_CODEPOINT, NOT_SINGLE_CODEPOINT;
 
@@ -45,7 +46,7 @@ macro UTF8Char @utf8char(String $s) @builtin @const
 <*
  @require @ok(validate_utf8_string(self.buf))
 *>
-fn usz UTF8String.len(&self) @operator(len) => validate_utf8_string(self.buf)!!;
+fn usz UTF8String.len(&self) @operator(len) @inline => validate_utf8_string(self.buf)!!;
 
 <*
  @require @ok(validate_utf8_string(self.buf))
@@ -136,6 +137,7 @@ fn UTF8String UTF8String.slice_len(&self, usz start, usz len)
 	return {self.buf[start_byte_idx:byte_len]};
 }
 
+fn char[] UTF8String.bytes(&self) @inline => self.buf;
 
 // a more efficient way of iterating over a utf8 string than foreach (c : self) in linear time instead of in whatever time it usually is (too much time)
 <*
@@ -158,10 +160,6 @@ fn usz? UTF8String.index_of_char(&self, UTF8Char c)
 	return NOT_FOUND?;
 }
 
-<*
- @require @ok(validate_utf8_string(self.buf))
- @require @ok(validate_utf8_char(c))
-*>
 fn bool UTF8String.contains_char(&self, UTF8Char c) => @ok(self.index_of_char(c));
 
 <*
@@ -183,6 +181,9 @@ fn usz? UTF8String.index_of(&self, UTF8String needle)
 	return NOT_FOUND?;
 }
 
+fn bool UTF8String.contains(&self, UTF8String needle) => @ok(self.index_of(needle));
+
+
 struct UTF8Iterator
 {
 	UTF8String string;
@@ -197,12 +198,10 @@ struct UTF8IteratorValue
 	char char_size;
 }
 
-fn usz UTF8Iterator.len(&self) @operator(len) => self.string.len();
-
 <*
  @require idx == self.char_idx : "Must do a foreach loop over UTF8Iterator"
 *>
-fn UTF8IteratorValue UTF8Iterator.get(&self, usz idx) @operator([])
+fn UTF8IteratorValue UTF8Iterator.get(&self, usz idx) @operator([]) @inline
 {
 	char char_size = utf8_char_len(self.string.buf[self.byte_idx..])!!;
 	defer
@@ -218,8 +217,10 @@ typedef UTF8CharIterator = inline UTF8Iterator;
 <*
  @require idx == self.char_idx : "Must do a foreach loop over UTF8CharIterator"
 *>
-fn UTF8Char UTF8CharIterator.get(&self, usz idx) @operator([]) @inline => ((UTF8Iterator*)self).get(idx).val;
-fn usz UTF8CharIterator.len(&self) @operator(len) => self.string.len();
+fn UTF8Char UTF8CharIterator.get(&self, usz idx) @operator([]) @inline => ((UTF8Iterator*)self).get(idx) @inline.val;
+
+fn usz UTF8Iterator.len(&self) @operator(len) @inline => self.string.len();
+fn usz UTF8CharIterator.len(&self) @operator(len) @inline => self.string.len();
 
 module utf8 @private;
 
@@ -271,7 +272,8 @@ macro char? validate_utf8_char(UTF8Char c) => utf8_char_len(c.to_constant_string
 <*
 	@require self.len > 0
 *>
-fn char? utf8_char_len(char[] self) {
+macro char? utf8_char_len(char[] self) {
+	// if (self.len == 8 && (char[<UTF8_VECTOR_CHECK_SIZE>])self[:UTF8_VECTOR_CHECK_SIZE] & 0x80 == (char[<UTF8_VECTOR_CHECK_SIZE>]){[0..7] = 0}) return UTF8_VECTOR_CHECK_SIZE;
 	switch (self[0])
 	{
 		// one byte
